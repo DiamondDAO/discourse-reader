@@ -10,11 +10,10 @@ from datetime import datetime
 
 
 class DiscourseScrapper:
-    def __init__(self, base_url, s3, threads=8):
+    def __init__(self, base_url, s3, now, threads=8):
         self.base_url = base_url
         if self.base_url[-1] != "/":
             self.base_url += "/"
-        now = datetime.now()
         self.s3 = s3
         self.date = now
 
@@ -22,6 +21,7 @@ class DiscourseScrapper:
         users = self.get_users()
         users = self.sort_users(users)
 
+        # save all users information as a json in s3
         user_file_name = f"discourse/daohaus/users/{self.date.strftime('%m-%d-%Y')}/users.json"
         s3object = self.s3.Object("chainverse", user_file_name)
         s3object.put(Body=(bytes(json.dumps(users).encode("UTF-8"))))
@@ -30,6 +30,7 @@ class DiscourseScrapper:
         if not categories:
             categories = self.get_categories()
 
+            # save all category broad information in s3
             all_category_file_name = (
                 f"discourse/daohaus/categories/{self.date.strftime('%m-%d-%Y')}/all_categories.json"
             )
@@ -41,6 +42,7 @@ class DiscourseScrapper:
             self.parse_category(category)
         print("all category files saved to s3")
 
+    # parse a category by returning all topics associated with the category, then iteratring through these topics to recover all posts and likes
     def parse_category(self, category):
         topics = self.get_topics(category, data=[])
         category["topics"] = topics
@@ -53,12 +55,14 @@ class DiscourseScrapper:
             posts[topic["id"]]["likes"] = likes
         category["posts"] = posts
 
+        # save individiual category information (topics, posts, metadata) in an individual file in s3
         category_file_name = f"discourse/daohaus/categories/{self.date.strftime('%m-%d-%Y')}/category_files/{category['id']}-{category['slug']}.json"
         s3object = self.s3.Object("chainverse", category_file_name)
         s3object.put(Body=(bytes(json.dumps(category).encode("UTF-8"))))
 
         return category
 
+    # iterate through users and mark them as an ethUser (depending on whether their name or username has an ENS or ethereum address)
     def sort_users(self, users):
         for idx, user in enumerate(users):
             if ".eth" in str(user["user"]["name"]) or ".eth" in str(user["user"]["username"]):
@@ -70,6 +74,7 @@ class DiscourseScrapper:
 
         return users
 
+    # get all users for the forum via API call
     def get_users(self, data=[], page=0, retry=0):
         if retry > 10:
             return data
@@ -84,6 +89,7 @@ class DiscourseScrapper:
             time.sleep(retry)
             return self.get_users(data=data, page=page, retry=retry + 1)
 
+    # get all categories for the forum via API call
     def get_categories(self, data=[], retry=0):
         if retry > 10:
             return data
@@ -96,6 +102,7 @@ class DiscourseScrapper:
             time.sleep(retry)
             return self.get_categories(retry=retry + 1)
 
+    # get all topics for a single category via API call
     def get_topics(self, category, data=[], page=0, retry=0):
         if retry > 10:
             return data
@@ -110,6 +117,7 @@ class DiscourseScrapper:
             time.sleep(retry)
             return self.get_topics(category, data=data, page=page, retry=retry + 1)
 
+    # get all posts for a topic by topic-id via API call
     def get_posts(self, topic_id, retry=0):
         if retry > 10:
             return {"post_stream": {"posts": []}}
@@ -121,6 +129,7 @@ class DiscourseScrapper:
             time.sleep(retry)
             return self.get_posts(topic_id, retry=retry + 1)
 
+    # get likes for a post by post-id via API call
     def get_likes(self, post_id, retry=0):
         if retry > 10:
             return []
@@ -163,7 +172,8 @@ if __name__ == "__main__":
 
     # set up AWS storage (s3)
     s3 = boto3.resource("s3")
-    scraper = DiscourseScrapper(args.url, s3)
+    now = datetime.now()
+    scraper = DiscourseScrapper(args.url, s3, now)
     if args.slug and args.id:
         category = {"slug": args.slug, "id": args.id}
         scraper.parse(categories=[category])
