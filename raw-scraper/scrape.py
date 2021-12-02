@@ -2,45 +2,44 @@
 
 import requests
 import json
-import numpy as np
 from tqdm import tqdm as tqdm
-import os
 import argparse
 import time
+import boto3
+from datetime import datetime
 
 
 class DiscourseScrapper:
-    def __init__(self, base_url, outpath=".", threads=8):
+    def __init__(self, base_url, s3, threads=8):
         self.base_url = base_url
         if self.base_url[-1] != "/":
             self.base_url += "/"
-        self.outpath = outpath
-        try:
-            os.mkdir(os.path.join(self.outpath))
-        except:
-            pass
-
-        try:
-            os.mkdir(os.path.join(self.outpath, "categories"))
-        except:
-            pass
+        now = datetime.now()
+        self.s3 = s3
+        self.date = now
 
     def parse(self, categories=None):
         users = self.get_users()
-
-        with open(os.path.join(self.outpath, "users.json"), "w") as f:
-            f.write(json.dumps(users))
-
         users = self.sort_users(users)
+
+        user_file_name = f"discourse/daohaus/users/{self.date.strftime('%m-%d-%Y')}/users.json"
+        s3object = self.s3.Object("chainverse", user_file_name)
+        s3object.put(Body=(bytes(json.dumps(users).encode("UTF-8"))))
+        print("users json saved to s3")
 
         if not categories:
             categories = self.get_categories()
 
-            with open(os.path.join(self.outpath, "categories.json"), "w") as f:
-                f.write(json.dumps(categories))
+            all_category_file_name = (
+                f"discourse/daohaus/categories/{self.date.strftime('%m-%d-%Y')}/all_categories.json"
+            )
+            s3object = self.s3.Object("chainverse", all_category_file_name)
+            s3object.put(Body=(bytes(json.dumps(categories).encode("UTF-8"))))
+            print("all categories json saved to s3")
 
         for category in tqdm(categories, position=0):
             self.parse_category(category)
+        print("all category files saved to s3")
 
     def parse_category(self, category):
         topics = self.get_topics(category, data=[])
@@ -53,8 +52,11 @@ class DiscourseScrapper:
                 likes[post["id"]] = self.get_likes(post["id"])
             posts[topic["id"]]["likes"] = likes
         category["posts"] = posts
-        with open(os.path.join(self.outpath, "categories", "{}.json".format(category["slug"])), "w") as f:
-            f.write(json.dumps(category))
+
+        category_file_name = f"discourse/daohaus/categories/{self.date.strftime('%m-%d-%Y')}/category_files/{category['id']}-{category['slug']}.json"
+        s3object = self.s3.Object("chainverse", category_file_name)
+        s3object.put(Body=(bytes(json.dumps(category).encode("UTF-8"))))
+
         return category
 
     def sort_users(self, users):
@@ -143,14 +145,6 @@ if __name__ == "__main__":
         help="The base url for the Discourse forum to scrape data from, starting with http:// or https://",
     )
     parser.add_argument(
-        "-o",
-        "--out",
-        metavar="out_path",
-        type=str,
-        required=True,
-        help="The location for the folder containing the result of the scrapping.",
-    )
-    parser.add_argument(
         "-s",
         "--slug",
         metavar="category_slug",
@@ -167,7 +161,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    scraper = DiscourseScrapper(args.url, args.out)
+    # set up AWS storage (s3)
+    s3 = boto3.resource("s3")
+    scraper = DiscourseScrapper(args.url, s3)
     if args.slug and args.id:
         category = {"slug": args.slug, "id": args.id}
         scraper.parse(categories=[category])
