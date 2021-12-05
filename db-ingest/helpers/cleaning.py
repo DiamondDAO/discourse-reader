@@ -32,7 +32,11 @@ def clean_users(raw_users):
             clean_user[key] = value
         clean_user["user_id"] = clean_user["id"]
         for key in user_entry_keys:
-            final_user[key] = clean_user[key]
+            try:
+                final_user[key] = clean_user[key]
+            except:
+                final_user[key] = None
+            final_user[key] = fix_sql_field(final_user[key])
         final_users.append(final_user)
 
     return final_users
@@ -80,6 +84,7 @@ def clean_topics(raw_topics):
                 final_topic[key] = clean_topic[key]
             except:
                 final_topic[key] = None
+            final_topic[key] = fix_sql_field(final_topic[key])
         final_topics.append(final_topic)
 
     return final_topics
@@ -95,7 +100,6 @@ def clean_category(raw_category):
         "position",
         "description",
         "description_text",
-        "description_excerpt",
         "topic_url",
         "read_restricted",
         "notification_level",
@@ -120,7 +124,7 @@ def clean_category(raw_category):
             final_category[key] = clean_category[key]
         except:
             final_category[key] = None
-
+        final_category[key] = fix_sql_field(final_category[key])
     return final_category
 
 
@@ -173,6 +177,7 @@ def clean_posts(raw_posts):
                     final_post[key] = cleaned_post[key]
                 except:
                     final_post[key] = None
+                final_post[key] = fix_sql_field(final_post[key])
             final_posts.append(final_post)
 
     return final_posts
@@ -188,3 +193,18 @@ def clean_category_file(raw_category):
     cleaned_posts = clean_posts(posts)
 
     return cleaned_category, cleaned_topics, cleaned_posts
+
+
+def fix_sql_field(x):
+    if type(x) == bool:
+        return x
+    try:
+        x = float(x)
+        return int(x)
+    except:
+        if x is None:
+            return ""
+        if type(x) == str:
+            return " ".join(x.split())
+        else:
+            return x
