@@ -12,6 +12,19 @@ from sqlalchemy import create_engine
 sys.path.append(__file__)
 from helpers.cleaning import clean_category_file, clean_users
 
+
+def truncate_and_ingest(cleaned_json, cur, engine, table_name):
+    df = pd.DataFrame(cleaned_json)
+    cur.execute(f"Truncate {table_name}")
+    output = io.StringIO()
+    df.to_csv(output, sep="\t", header=False, index=False)
+    output.seek(0)
+    contents = output.getvalue()
+    cur.copy_from(output, table_name, null="")
+    engine.commit()
+    print(f"{table_name} table saved")
+
+
 if __name__ == "__main__":
 
     s3 = boto3.resource("s3")
@@ -86,45 +99,10 @@ if __name__ == "__main__":
     engine = psycopg2.connect(**database_dict)
     cur = engine.cursor()
 
-    categories_df = pd.DataFrame(all_cleaned_categories)
-    cur.execute("TRUNCATE discourse.categories;")
-    output = io.StringIO()
-    categories_df.to_csv(output, sep="\t", header=False, index=False)
-    output.seek(0)
-    contents = output.getvalue()
-    cur.copy_from(output, "discourse.categories", null="")
-    engine.commit()
-    print("discourse.categories table saved")
-
-    topics_df = pd.DataFrame(all_cleaned_topics)
-    cur.execute("TRUNCATE discourse.topics;")
-    output = io.StringIO()
-    topics_df.to_csv(output, sep="\t", header=False, index=False)
-    output.seek(0)
-    contents = output.getvalue()
-    cur.copy_from(output, "discourse.topics", null="")
-    engine.commit()
-    print("discourse.topics table saved")
-
-    posts_df = pd.DataFrame(all_cleaned_posts)
-    cur.execute("TRUNCATE discourse.posts;")
-    output = io.StringIO()
-    posts_df.to_csv(output, sep="\t", header=False, index=False)
-    output.seek(0)
-    contents = output.getvalue()
-    cur.copy_from(output, "discourse.posts", null="")
-    engine.commit()
-    print("discourse.posts table saved")
-
-    users_df = pd.DataFrame(all_cleaned_users)
-    cur.execute("TRUNCATE discourse.users;")
-    output = io.StringIO()
-    users_df.to_csv(output, sep="\t", header=False, index=False)
-    output.seek(0)
-    contents = output.getvalue()
-    cur.copy_from(output, "discourse.users", null="")
-    engine.commit()
-    print("discourse.users table saved")
+    truncate_and_ingest(all_cleaned_categories, cur, engine, "discourse.categories")
+    truncate_and_ingest(all_cleaned_topics, cur, engine, "discourse.topics")
+    truncate_and_ingest(all_cleaned_posts, cur, engine, "discourse.posts")
+    truncate_and_ingest(all_cleaned_users, cur, engine, "discourse.users")
 
     # close cursor and exit
     cur.close()
