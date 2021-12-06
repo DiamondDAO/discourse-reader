@@ -113,6 +113,7 @@ def clean_category(raw_category):
         "topics_all_time",
         "uploaded_logo",
         "uploaded_background",
+        "description_excerpt",
     ]
     clean_category = {}
     final_category = {}
